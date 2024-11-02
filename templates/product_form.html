@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container my-4 p-3" style="background-color: #E0E0E0; border-radius: 8px;">
+    <h2>{{ 'Update Product' if product else 'Add Product' }}</h2>
+    <form method="POST" action="{{ url_for('update_product' if product else 'add_product', product_id=product.id if product else None) }}" enctype="multipart/form-data">
+        {{ form.hidden_tag() }} 
+
+        <div class="mb-3">
+            <label for="name" class="form-label">Product Name</label>
+            <input type="text" class="form-control" id="name" name="name" value="{{ product.name if product else '' }}" required>
+        </div>
+
+        <div class="mb-3">
+            <label for="price" class="form-label">Price</label>
+            <input type="number" class="form-control" id="price" name="price" value="{{ product.price if product else '' }}" required>
+        </div>
+
+        <div class="mb-3">
+            <label for="image" class="form-label">Upload Image</label>
+            <input type="file" class="form-control" id="image" name="image" accept="image/*">
+            {% if product %}
+                <small>Current Image: <img src="{{ url_for('static', filename='uploads/' + product.image_file) }}" alt="{{ product.name }}" width="100"></small>
+            {% endif %}
+        </div>
+
+        <button type="submit" class="btn btn-primary">{{ 'Update Product' if product else 'Add Product' }}</button>
+    </form>
+</div>
+{% endblock %}

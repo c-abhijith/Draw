@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="containers">
+    <h2>Sign Up</h2>
+    <form method="POST" action="{{ url_for('signup') }}" onsubmit="return validateForm();">
+        {{ form.hidden_tag() }}  <!-- This includes CSRF token -->
+        
+        <label for="username">Username:</label>
+        {{ form.username(id='username', size=32, onblur='validateUsername()') }}<br>
+        <span id="usernameError" style="color: red;font-size: 10px;"></span>
+        <br>
+
+        <label for="email">Email:</label>
+        {{ form.email(id='email', size=32, onblur='validateEmail()') }}<br>
+        <span id="emailError" style="color: red;font-size: 10px;"></span>
+        <br>
+
+        <label for="password">Password:</label>
+        {{ form.password(id='password', size=32, onblur='validatePassword()') }}<br>
+        <span id="passwordError" style="color: red;font-size: 10px;"></span>
+        <br>
+
+        {{ form.submit(class='btn-blue') }}
+    </form>
+</div>
+{% endblock %}
