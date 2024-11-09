@@ -195,4 +195,4 @@ def toggle_like(product_id):
 
 # Run the application
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run()
