@@ -7,20 +7,22 @@ import os
 from werkzeug.utils import secure_filename
 from config import Config
 from forms import SignupForm, LoginForm, PictureForm, ToggleLikeForm
-from models import db, User, Product  # Import models here
-from utils import login_required, logout_required  # Import utility functions here
+from models import db, User, Product
+from utils import login_required, logout_required
+from googleapiclient.discovery import build
+from google.oauth2 import service_account
+from googleapiclient.http import MediaFileUpload
 
-# Initialize Flask app and database
+# Initialize Flask app and load configurations
 app = Flask(__name__)
 app.config.from_object(Config)
-db.init_app(app)  # Initialize SQLAlchemy with the app
+db.init_app(app)
 csrf = CSRFProtect(app)
 migrate = Migrate(app, db)
 
-# Ensure the upload directory exists
+# Create upload directory if it doesn't exist
 UPLOAD_FOLDER = app.config['UPLOAD_FOLDER']
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
@@ -28,36 +30,81 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# Create tables
+# Google Drive API functions
+SCOPES = ['https://www.googleapis.com/auth/drive']
+SERVICE_ACCOUNT_FILE = 'service_account.json'
+PARENT_FOLDER_ID = "1K81Cm3JEKDjArJq2MGNWLbvz26S7-KCT"  # Replace with your folder ID from Google Drive
+
+def authenticate():
+    creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    return creds
+
+def upload_photo(file_path, filename):
+    creds = authenticate()
+    service = build('drive', 'v3', credentials=creds)
+
+    file_metadata = {
+        'name': filename,  # Set file name dynamically
+        'parents': [PARENT_FOLDER_ID]  # Specifies the folder in which the file will be uploaded
+    }
+
+    media = MediaFileUpload(file_path, mimetype='image/jpeg')  # Set the MIME type for the image
+
+    try:
+        # Upload the file
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media
+        ).execute()
+
+        # Update sharing permissions to make the file public
+        service.permissions().create(
+            fileId=file['id'],
+            body={'role': 'reader', 'type': 'anyone'}
+        ).execute()
+
+        return file.get('id')  # Return the file ID from Google Drive
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None  # Handle error gracefully
+
+def delete_google_drive_file(file_id):
+    creds = authenticate()
+    service = build('drive', 'v3', credentials=creds)
+    try:
+        service.files().delete(fileId=file_id).execute()
+    except Exception as e:
+        print(f"An error occurred while deleting the file: {e}")
+
 with app.app_context():
     db.create_all()
 
-# Route for user signup
+# User Signup Route
 @app.route('/signup', methods=['GET', 'POST'])
 @logout_required
 def signup():
     form = SignupForm()
     if form.validate_on_submit():
-        hashed_password = generate_password_hash(form.password.data)  # Hash password
+        hashed_password = generate_password_hash(form.password.data)
         new_user = User(username=form.username.data, email=form.email.data, password=hashed_password)
         db.session.add(new_user)
-        db.session.commit()  # Commit to the database
+        db.session.commit()
         flash('Account created successfully!', 'success')
         return redirect(url_for('login'))
     return render_template('signup.html', form=form)
 
-# Route for user login
+# User Login Route
 @app.route('/', methods=['GET', 'POST'])
 @logout_required
 def login():
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()  # Get user by username
-        if user and check_password_hash(user.password, form.password.data):  # Verify password
-            session['user_id'] = user.id  # Store user_id in session
+        user = User.query.filter_by(username=form.username.data).first()
+        if user and check_password_hash(user.password, form.password.data):
+            session['user_id'] = user.id
             flash('Login successful!', 'success')
             return redirect(url_for('home'))
-        flash('Invalid username or password.', 'error')  # Show error for invalid credentials
+        flash('Invalid username or password.', 'error')
     return render_template('login.html', form=form)
 
 @app.route('/home')
@@ -65,26 +112,16 @@ def login():
 def home():
     current_user_id = session.get('user_id')
     form = ToggleLikeForm()
-    # Get the search term from query parameters
     search_term = request.args.get('search', '').strip()
-
-    # Set pagination variables
     page = request.args.get('page', 1, type=int)
-    per_page = 8  # Number of products per page
-
-    # Create a base query for products
+    per_page = 8
     query = Product.query
 
-    # Apply search filter if there is a search term
     if search_term:
         query = query.filter(Product.name.ilike(f'%{search_term}%'))
-
-    # Order by user products first
     query = query.order_by(
         db.case((Product.user_id == current_user_id, 1), else_=0).desc()
     )
-
-    # Paginate results
     products = query.paginate(page=page, per_page=per_page)
     cards = [
         {
@@ -93,78 +130,84 @@ def home():
             "price": product.price,
             "count": len(product.like_count),
             "users_list": product.like_count,
-            "image": product.image_file,
+            "image_url": f"https://drive.google.com/thumbnail?id={product.image_file}",  # Google Drive Image URL
             "user": product.user_id
-        } for product in products
+        } for product in products.items
     ]
-    # Render home template with product cards data
+    
     return render_template('home.html', cards=cards, search_term=search_term, products=products, form=form)
 
-# Route for logging out
 @app.route('/logout')
-@login_required  # Ensure the user is logged in before logging out
+@login_required
 def logout():
-    session.pop('user_id', None)  # Remove user_id from session
+    session.pop('user_id', None)
     flash('You have been logged out.', 'success')
     return redirect(url_for('login'))
 
-# Route for adding a product
 @app.route('/add_product', methods=['GET', 'POST'])
 @login_required
 def add_product():
     form = PictureForm()
-
     if form.validate_on_submit():
-        # Check if a file is part of the request
-        if 'image' not in request.files or request.files['image'].filename == '':
-            flash('No file part', 'error')
-            return redirect(request.url)
-
         file = request.files['image']
-
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
 
-            new_product = Product(
-                name=form.name.data,
-                price=form.price.data,
-                user_id=session['user_id'],
-                image_file=filename
-            )
-            db.session.add(new_product)
-            db.session.commit()
-            flash('Product added successfully!', 'success')
-            return redirect(url_for('home'))
-        else:
-            flash('Invalid file type. Allowed types are: png, jpg, jpeg, gif', 'error')
-
+            # Upload the image to Google Drive and get the file ID
+            file_id = upload_photo(file_path, filename)
+            if file_id:
+                new_product = Product(
+                    name=form.name.data,
+                    price=form.price.data,
+                    user_id=session['user_id'],
+                    image_file=file_id  # Store the Google Drive file ID in the database
+                )
+                db.session.add(new_product)
+                db.session.commit()
+                flash('Product added successfully!', 'success')
+                return redirect(url_for('home'))
+            else:
+                flash('Error uploading image to Google Drive.', 'error')
+        flash('Invalid file type. Allowed types are: png, jpg, jpeg, gif', 'error')
     return render_template('product_form.html', form=form)
 
 @app.route('/update_product/<int:product_id>', methods=['GET', 'POST'])
 @login_required
 def update_product(product_id):
-    product = Product.query.get_or_404(product_id)  # Get the product by ID
+    product = Product.query.get_or_404(product_id)
     form = PictureForm()
 
-    if request.method == 'POST':
-        # Handle file upload (optional, if user doesn't want to change the image)
+    # Store the current image file ID (Google Drive ID)
+    old_image_file_id = product.image_file
+
+    if form.validate_on_submit():
         if 'image' in request.files and request.files['image']:
             file = request.files['image']
             if file and allowed_file(file.filename):
+                # Delete the old image from Google Drive before replacing it
+                if old_image_file_id:
+                    delete_google_drive_file(old_image_file_id)
+
+                # Save the new image locally
                 filename = secure_filename(file.filename)
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                product.image_file = filename  # Update the image file if a new one is uploaded
 
-        # Update product fields
+                # Upload the new image to Google Drive and update the file ID
+                file_id = upload_photo(os.path.join(app.config['UPLOAD_FOLDER'], filename), filename)
+                if file_id:
+                    product.image_file = file_id  # Update the Google Drive file ID
+
+        # Update product details (name, price, etc.)
         product.name = form.name.data
         product.price = form.price.data
+        db.session.commit()
         
-        db.session.commit()  # Commit changes to the database
         flash('Product updated successfully!', 'success')
         return redirect(url_for('home'))
 
-    form.name.data = product.name  # Pre-fill the form with existing data
+    form.name.data = product.name
     form.price.data = product.price
     return render_template('product_form.html', form=form, product=product)
 
@@ -172,7 +215,12 @@ def update_product(product_id):
 @login_required
 def delete_product(product_id):
     product = Product.query.get_or_404(product_id)
-    db.session.delete(product)  # Delete product from the database
+    
+    # Delete the image from Google Drive before deleting the product
+    if product.image_file:
+        delete_google_drive_file(product.image_file)
+
+    db.session.delete(product)
     db.session.commit()
     flash('Product deleted successfully!', 'success')
     return redirect(url_for('home'))
@@ -180,19 +228,16 @@ def delete_product(product_id):
 @app.route('/toggle_like/<int:product_id>', methods=['POST'])
 @login_required
 def toggle_like(product_id):
-    product = Product.query.get_or_404(product_id)  # Fetch the product by ID
-    user_id = session['user_id']  # Get the current user's ID
-
+    product = Product.query.get_or_404(product_id)
+    user_id = session['user_id']
     if user_id in product.like_count:
-        product.like_count.remove(user_id)  # Unlike the product
+        product.like_count.remove(user_id)
         flash('You unliked this product.', 'success')
     else:
-        product.like_count.append(user_id)  # Like the product
+        product.like_count.append(user_id)
         flash('You liked this product!', 'success')
-
-    db.session.commit()  # Commit changes to the database
+    db.session.commit()
     return redirect(url_for('home'))
 
-# Run the application
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=True)
