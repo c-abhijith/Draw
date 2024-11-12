@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session,jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import CSRFProtect
@@ -14,6 +14,7 @@ from google.oauth2 import service_account
 from googleapiclient.http import MediaFileUpload
 
 # Initialize Flask app and load configurations
+
 app = Flask(__name__)
 app.config.from_object(Config)
 db.init_app(app)
@@ -22,14 +23,21 @@ migrate = Migrate(app, db)
 
 # Create upload directory if it doesn't exist
 UPLOAD_FOLDER = app.config['UPLOAD_FOLDER']
+# <<<<<<< HEAD
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# =======
+# # if not os.path.exists(UPLOAD_FOLDER):
+# #     os.makedirs(UPLOAD_FOLDER)
+# # dropbox_client = dropbox.Dropbox(Config.DROPBOX_ACCESS_TOKEN)
+# >>>>>>> cf581f5815b0b7ccf5ed63cab182948f02d0a864
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-
+dbx = dropbox.Dropbox(app.config['DROPBOX_ACCESS_TOKEN'])
 # Function to check allowed file extensions
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+# <<<<<<< HEAD
 # Google Drive API functions
 SCOPES = ['https://www.googleapis.com/auth/drive']
 SERVICE_ACCOUNT_FILE = 'service_account.json'
@@ -76,6 +84,19 @@ def delete_google_drive_file(file_id):
     except Exception as e:
         print(f"An error occurred while deleting the file: {e}")
 
+# =======
+# def get_dropbox_shared_link(file_path):
+#     try:
+#         if not file_path.startswith('/'):
+#             file_path = '/' + file_path  # Prefix with '/' if missing
+#         shared_link_metadata = dbx.sharing_create_shared_link_with_settings(file_path)
+#         return shared_link_metadata.url.replace("?dl=0", "?raw=1")  # Modify to make it a direct link
+#     except dropbox.exceptions.ApiError as e:
+#         print(f"Error getting shared link: {e}")
+#         return None
+    
+# # Create tables
+# >>>>>>> cf581f5815b0b7ccf5ed63cab182948f02d0a864
 with app.app_context():
     db.create_all()
 
@@ -134,7 +155,7 @@ def home():
             "user": product.user_id
         } for product in products.items
     ]
-    
+
     return render_template('home.html', cards=cards, search_term=search_term, products=products, form=form)
 
 @app.route('/logout')
@@ -152,8 +173,58 @@ def add_product():
         file = request.files['image']
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
+# <<<<<<< HEAD
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(file_path)
+# =======
+#             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+
+#             new_product = Product(
+#                 name=form.name.data,
+#                 price=form.price.data,
+#                 user_id=session['user_id'],
+#                 image_file=filename
+#             )
+#             db.session.add(new_product)
+#             db.session.commit()
+#             flash('Product added successfully!', 'success')
+#             return redirect(url_for('home'))
+#         else:
+#             flash('Invalid file type. Allowed types are: png, jpg, jpeg, gif', 'error')
+    
+
+#     return render_template('product_form.html', form=form)@app.route('/add_product', methods=['GET', 'POST'])
+# @login_required
+# def add_product():
+#     form = PictureForm()
+
+#     if form.validate_on_submit():
+#         if 'image' not in request.files or request.files['image'].filename == '':
+#             flash('No file part', 'error')
+#             return redirect(request.url)
+
+#         file = request.files['image']
+#         if file and allowed_file(file.filename):
+#             filename = secure_filename(file.filename)
+#             file_path = f"/products/{filename}"
+#             # Upload to Dropbox
+#             try:
+#                 dbx.files_upload(file.read(), file_path)
+#                 new_product = Product(
+#                     name=form.name.data,
+#                     price=form.price.data,
+#                     user_id=session['user_id'],
+#                     image_file=file_path
+#                 )
+#                 db.session.add(new_product)
+#                 db.session.commit()
+#                 flash('Product added successfully!', 'success')
+#                 return redirect(url_for('home'))
+#             except dropbox.exceptions.ApiError as e:
+#                 flash(f"Error uploading file to Dropbox: {e}", 'error')
+#         else:
+#             flash('Invalid file type. Allowed types are: png, jpg, jpeg, gif', 'error')
+# >>>>>>> cf581f5815b0b7ccf5ed63cab182948f02d0a864
 
             # Upload the image to Google Drive and get the file ID
             file_id = upload_photo(file_path, filename)
@@ -239,5 +310,25 @@ def toggle_like(product_id):
     db.session.commit()
     return redirect(url_for('home'))
 
+# <<<<<<< HEAD
+# =======
+
+
+# @app.route('/delete_all_users_and_products', methods=['GET'])
+# def delete_all_users_and_products():
+#     products = Product.query.all()
+#     for product in products:
+#         db.session.delete(product)  
+#     users = User.query.all()
+#     for user in users:
+#         db.session.delete(user)  
+#     db.session.commit()
+
+    
+#     return jsonify({"message": "All users and products deleted successfully"}), 200
+
+
+# # Run the application
+# >>>>>>> cf581f5815b0b7ccf5ed63cab182948f02d0a864
 if __name__ == '__main__':
     app.run(debug=True)
