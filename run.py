@@ -13,7 +13,6 @@ from googleapiclient.discovery import build
 from google.oauth2 import service_account
 from googleapiclient.http import MediaFileUpload
 
-# Initialize Flask app and load configurations
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -21,22 +20,21 @@ db.init_app(app)
 csrf = CSRFProtect(app)
 migrate = Migrate(app, db)
 
-# Create upload directory if it doesn't exist
+
 UPLOAD_FOLDER = app.config['UPLOAD_FOLDER']
-# <<<<<<< HEAD
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
-# Function to check allowed file extensions
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
 SERVICE_ACCOUNT_FILE = 'service_account.json'
-PARENT_FOLDER_ID = "1K81Cm3JEKDjArJq2MGNWLbvz26S7-KCT"  # Replace with your folder ID from Google Drive
+PARENT_FOLDER_ID = "1K81Cm3JEKDjArJq2MGNWLbvz26S7-KCT"  
 
 def authenticate():
     creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -47,29 +45,28 @@ def upload_photo(file_path, filename):
     service = build('drive', 'v3', credentials=creds)
 
     file_metadata = {
-        'name': filename,  # Set file name dynamically
-        'parents': [PARENT_FOLDER_ID]  # Specifies the folder in which the file will be uploaded
+        'name': filename,  
+        'parents': [PARENT_FOLDER_ID]  
     }
 
-    media = MediaFileUpload(file_path, mimetype='image/jpeg')  # Set the MIME type for the image
+    media = MediaFileUpload(file_path, mimetype='image/jpeg') 
 
     try:
-        # Upload the file
+      
         file = service.files().create(
             body=file_metadata,
             media_body=media
         ).execute()
 
-        # Update sharing permissions to make the file public
         service.permissions().create(
             fileId=file['id'],
             body={'role': 'reader', 'type': 'anyone'}
         ).execute()
 
-        return file.get('id')  # Return the file ID from Google Drive
+        return file.get('id') 
     except Exception as e:
         print(f"An error occurred: {e}")
-        return None  # Handle error gracefully
+        return None 
 
 def delete_google_drive_file(file_id):
     creds = authenticate()
@@ -79,23 +76,11 @@ def delete_google_drive_file(file_id):
     except Exception as e:
         print(f"An error occurred while deleting the file: {e}")
 
-# =======
-# def get_dropbox_shared_link(file_path):
-#     try:
-#         if not file_path.startswith('/'):
-#             file_path = '/' + file_path  # Prefix with '/' if missing
-#         shared_link_metadata = dbx.sharing_create_shared_link_with_settings(file_path)
-#         return shared_link_metadata.url.replace("?dl=0", "?raw=1")  # Modify to make it a direct link
-#     except dropbox.exceptions.ApiError as e:
-#         print(f"Error getting shared link: {e}")
-#         return None
-    
-# # Create tables
-# >>>>>>> cf581f5815b0b7ccf5ed63cab182948f02d0a864
+
 with app.app_context():
     db.create_all()
 
-# User Signup Route
+
 @app.route('/signup', methods=['GET', 'POST'])
 @logout_required
 def signup():
@@ -109,7 +94,7 @@ def signup():
         return redirect(url_for('login'))
     return render_template('signup.html', form=form)
 
-# User Login Route
+
 @app.route('/', methods=['GET', 'POST'])
 @logout_required
 def login():
@@ -146,7 +131,7 @@ def home():
             "price": product.price,
             "count": len(product.like_count),
             "users_list": product.like_count,
-            "image_url": f"https://drive.google.com/thumbnail?id={product.image_file}",  # Google Drive Image URL
+            "image_url": f"https://drive.google.com/thumbnail?id={product.image_file}", 
             "user": product.user_id
         } for product in products.items
     ]
@@ -168,7 +153,6 @@ def add_product():
         file = request.files['image']
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
-# <<<<<<< HEAD
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(file_path)
 
@@ -178,7 +162,7 @@ def add_product():
                     name=form.name.data,
                     price=form.price.data,
                     user_id=session['user_id'],
-                    image_file=file_id  # Store the Google Drive file ID in the database
+                    image_file=file_id  
                 )
                 db.session.add(new_product)
                 db.session.commit()
@@ -195,27 +179,24 @@ def update_product(product_id):
     product = Product.query.get_or_404(product_id)
     form = PictureForm()
 
-    # Store the current image file ID (Google Drive ID)
+ 
     old_image_file_id = product.image_file
 
     if form.validate_on_submit():
         if 'image' in request.files and request.files['image']:
             file = request.files['image']
             if file and allowed_file(file.filename):
-                # Delete the old image from Google Drive before replacing it
                 if old_image_file_id:
                     delete_google_drive_file(old_image_file_id)
 
-                # Save the new image locally
+
                 filename = secure_filename(file.filename)
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-
-                # Upload the new image to Google Drive and update the file ID
                 file_id = upload_photo(os.path.join(app.config['UPLOAD_FOLDER'], filename), filename)
                 if file_id:
-                    product.image_file = file_id  # Update the Google Drive file ID
+                    product.image_file = file_id  
 
-        # Update product details (name, price, etc.)
+
         product.name = form.name.data
         product.price = form.price.data
         db.session.commit()
@@ -232,7 +213,7 @@ def update_product(product_id):
 def delete_product(product_id):
     product = Product.query.get_or_404(product_id)
     
-    # Delete the image from Google Drive before deleting the product
+
     if product.image_file:
         delete_google_drive_file(product.image_file)
 
@@ -255,25 +236,6 @@ def toggle_like(product_id):
     db.session.commit()
     return redirect(url_for('home'))
 
-# <<<<<<< HEAD
-# =======
 
-
-# @app.route('/delete_all_users_and_products', methods=['GET'])
-# def delete_all_users_and_products():
-#     products = Product.query.all()
-#     for product in products:
-#         db.session.delete(product)  
-#     users = User.query.all()
-#     for user in users:
-#         db.session.delete(user)  
-#     db.session.commit()
-
-    
-#     return jsonify({"message": "All users and products deleted successfully"}), 200
-
-
-# # Run the application
-# >>>>>>> cf581f5815b0b7ccf5ed63cab182948f02d0a864
 if __name__ == '__main__':
     app.run()
