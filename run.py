@@ -171,57 +171,7 @@ def add_product():
 # <<<<<<< HEAD
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(file_path)
-# =======
-#             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
-#             new_product = Product(
-#                 name=form.name.data,
-#                 price=form.price.data,
-#                 user_id=session['user_id'],
-#                 image_file=filename
-#             )
-#             db.session.add(new_product)
-#             db.session.commit()
-#             flash('Product added successfully!', 'success')
-#             return redirect(url_for('home'))
-#         else:
-#             flash('Invalid file type. Allowed types are: png, jpg, jpeg, gif', 'error')
-    
-
-#     return render_template('product_form.html', form=form)@app.route('/add_product', methods=['GET', 'POST'])
-# @login_required
-# def add_product():
-#     form = PictureForm()
-
-#     if form.validate_on_submit():
-#         if 'image' not in request.files or request.files['image'].filename == '':
-#             flash('No file part', 'error')
-#             return redirect(request.url)
-
-#         file = request.files['image']
-#         if file and allowed_file(file.filename):
-#             filename = secure_filename(file.filename)
-#             file_path = f"/products/{filename}"
-#             # Upload to Dropbox
-#             try:
-#                 dbx.files_upload(file.read(), file_path)
-#                 new_product = Product(
-#                     name=form.name.data,
-#                     price=form.price.data,
-#                     user_id=session['user_id'],
-#                     image_file=file_path
-#                 )
-#                 db.session.add(new_product)
-#                 db.session.commit()
-#                 flash('Product added successfully!', 'success')
-#                 return redirect(url_for('home'))
-#             except dropbox.exceptions.ApiError as e:
-#                 flash(f"Error uploading file to Dropbox: {e}", 'error')
-#         else:
-#             flash('Invalid file type. Allowed types are: png, jpg, jpeg, gif', 'error')
-# >>>>>>> cf581f5815b0b7ccf5ed63cab182948f02d0a864
-
-            # Upload the image to Google Drive and get the file ID
             file_id = upload_photo(file_path, filename)
             if file_id:
                 new_product = Product(
@@ -326,4 +276,4 @@ def toggle_like(product_id):
 # # Run the application
 # >>>>>>> cf581f5815b0b7ccf5ed63cab182948f02d0a864
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run()
