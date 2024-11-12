@@ -33,8 +33,7 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# <<<<<<< HEAD
-# Google Drive API functions
+
 SCOPES = ['https://www.googleapis.com/auth/drive']
 SERVICE_ACCOUNT_FILE = 'service_account.json'
 PARENT_FOLDER_ID = "1K81Cm3JEKDjArJq2MGNWLbvz26S7-KCT"  # Replace with your folder ID from Google Drive
