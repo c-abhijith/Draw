@@ -25,11 +25,7 @@ migrate = Migrate(app, db)
 UPLOAD_FOLDER = app.config['UPLOAD_FOLDER']
 # <<<<<<< HEAD
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-# =======
-# # if not os.path.exists(UPLOAD_FOLDER):
-# #     os.makedirs(UPLOAD_FOLDER)
-# # dropbox_client = dropbox.Dropbox(Config.DROPBOX_ACCESS_TOKEN)
-# >>>>>>> cf581f5815b0b7ccf5ed63cab182948f02d0a864
+
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
