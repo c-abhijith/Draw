@@ -32,7 +32,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # >>>>>>> cf581f5815b0b7ccf5ed63cab182948f02d0a864
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-dbx = dropbox.Dropbox(app.config['DROPBOX_ACCESS_TOKEN'])
+
 # Function to check allowed file extensions
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
