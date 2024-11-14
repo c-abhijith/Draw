@@ -6,6 +6,10 @@ venv/
 ENV/
 instance/
 *.db
-static/uploads/*
-!static/uploads/.gitkeep
+.vercel
+static/*
+!static/.gitkeep
+!static/css/.gitkeep
+!static/js/.gitkeep
+!static/images/.gitkeep
 

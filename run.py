@@ -12,7 +12,10 @@ from utils import login_required, logout_required
 import os
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-app = Flask(__name__, static_url_path='/static')
+app = Flask(__name__, 
+    static_url_path='/static',
+    static_folder='static'
+)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config.from_object(Config)
 db.init_app(app)
@@ -227,7 +230,7 @@ def toggle_like(product_id):
 # Add this route for serving static files
 @app.route('/static/<path:path>')
 def serve_static(path):
-    return send_from_directory('static', path)
+    return send_from_directory(app.static_folder, path)
 
 if __name__ == '__main__':
     if os.getenv('VERCEL_ENV') == 'production':
