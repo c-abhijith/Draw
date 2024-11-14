@@ -1,18 +1,14 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session,jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import CSRFProtect
 from flask_migrate import Migrate
-import os
-from werkzeug.utils import secure_filename
+import cloudinary
+import cloudinary.uploader
 from config import Config
 from forms import SignupForm, LoginForm, PictureForm, ToggleLikeForm
 from models import db, User, Product
 from utils import login_required, logout_required
-from googleapiclient.discovery import build
-from google.oauth2 import service_account
-from googleapiclient.http import MediaFileUpload
-
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -20,67 +16,38 @@ db.init_app(app)
 csrf = CSRFProtect(app)
 migrate = Migrate(app, db)
 
+# Configure Cloudinary
+cloudinary.config(
+    cloud_name=app.config['CLOUDINARY_CLOUD_NAME'],
+    api_key=app.config['CLOUDINARY_API_KEY'],
+    api_secret=app.config['CLOUDINARY_API_SECRET']
+)
 
-UPLOAD_FOLDER = app.config['UPLOAD_FOLDER']
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-SCOPES = ['https://www.googleapis.com/auth/drive']
-SERVICE_ACCOUNT_FILE = 'service_account.json'
-PARENT_FOLDER_ID = "1K81Cm3JEKDjArJq2MGNWLbvz26S7-KCT"  
-
-def authenticate():
-    creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    return creds
-
-def upload_photo(file_path, filename):
-    creds = authenticate()
-    service = build('drive', 'v3', credentials=creds)
-
-    file_metadata = {
-        'name': filename,  
-        'parents': [PARENT_FOLDER_ID]  
-    }
-
-    media = MediaFileUpload(file_path, mimetype='image/jpeg') 
-
+# Function to upload image to Cloudinary
+def upload_photo(file):
     try:
-      
-        file = service.files().create(
-            body=file_metadata,
-            media_body=media
-        ).execute()
-
-        service.permissions().create(
-            fileId=file['id'],
-            body={'role': 'reader', 'type': 'anyone'}
-        ).execute()
-
-        return file.get('id') 
+        # Upload directly to cloudinary from the file stream
+        result = cloudinary.uploader.upload(
+            file,
+            folder="product_images",  # Optional: organize images in a folder
+            resource_type="auto"      # Automatically detect resource type
+        )
+        return result['public_id']    # Return Cloudinary public ID
     except Exception as e:
-        print(f"An error occurred: {e}")
-        return None 
+        print(f"An error occurred during upload: {e}")
+        return None
 
-def delete_google_drive_file(file_id):
-    creds = authenticate()
-    service = build('drive', 'v3', credentials=creds)
+# Function to delete image from Cloudinary
+def delete_photo(public_id):
     try:
-        service.files().delete(fileId=file_id).execute()
+        cloudinary.uploader.destroy(public_id)
     except Exception as e:
         print(f"An error occurred while deleting the file: {e}")
-
 
 with app.app_context():
     db.create_all()
 
-
+# Signup route
 @app.route('/signup', methods=['GET', 'POST'])
 @logout_required
 def signup():
@@ -94,7 +61,7 @@ def signup():
         return redirect(url_for('login'))
     return render_template('signup.html', form=form)
 
-
+# Login route
 @app.route('/', methods=['GET', 'POST'])
 @logout_required
 def login():
@@ -108,6 +75,7 @@ def login():
         flash('Invalid username or password.', 'error')
     return render_template('login.html', form=form)
 
+# Home route
 @app.route('/home')
 @login_required
 def home():
@@ -131,13 +99,19 @@ def home():
             "price": product.price,
             "count": len(product.like_count),
             "users_list": product.like_count,
-            "image_url": f"https://drive.google.com/thumbnail?id={product.image_file}", 
+            "image_url": cloudinary.CloudinaryImage(product.image_file).build_url(
+                width=300,
+                height=300,
+                crop="fill"
+            ),
             "user": product.user_id
         } for product in products.items
     ]
-
+    for i in cards:
+        print(i)
     return render_template('home.html', cards=cards, search_term=search_term, products=products, form=form)
 
+# Logout route
 @app.route('/logout')
 @login_required
 def logout():
@@ -145,6 +119,7 @@ def logout():
     flash('You have been logged out.', 'success')
     return redirect(url_for('login'))
 
+# Add product route
 @app.route('/add_product', methods=['GET', 'POST'])
 @login_required
 def add_product():
@@ -152,55 +127,59 @@ def add_product():
     if form.validate_on_submit():
         file = request.files['image']
         if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(file_path)
-
-            file_id = upload_photo(file_path, filename)
+            # Upload directly to Cloudinary without saving locally
+            file_id = upload_photo(file)
             if file_id:
                 new_product = Product(
                     name=form.name.data,
                     price=form.price.data,
                     user_id=session['user_id'],
-                    image_file=file_id  
+                    image_file=file_id  # Store Cloudinary public ID
                 )
                 db.session.add(new_product)
                 db.session.commit()
                 flash('Product added successfully!', 'success')
                 return redirect(url_for('home'))
             else:
-                flash('Error uploading image to Google Drive.', 'error')
-        flash('Invalid file type. Allowed types are: png, jpg, jpeg, gif', 'error')
+                flash('Error uploading image to Cloudinary.', 'error')
+        else:
+            flash('Invalid file type. Allowed types are: png, jpg, jpeg, gif', 'error')
     return render_template('product_form.html', form=form)
 
+# Add this helper function at the top of your file with other utility functions
+def allowed_file(filename):
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Update product route
 @app.route('/update_product/<int:product_id>', methods=['GET', 'POST'])
 @login_required
 def update_product(product_id):
     product = Product.query.get_or_404(product_id)
     form = PictureForm()
 
- 
-    old_image_file_id = product.image_file
-
     if form.validate_on_submit():
         if 'image' in request.files and request.files['image']:
             file = request.files['image']
-            if file and allowed_file(file.filename):
-                if old_image_file_id:
-                    delete_google_drive_file(old_image_file_id)
-
-
-                filename = secure_filename(file.filename)
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                file_id = upload_photo(os.path.join(app.config['UPLOAD_FOLDER'], filename), filename)
+            if allowed_file(file.filename):
+                if product.image_file:
+                    delete_photo(product.image_file)
+                
+                file_id = upload_photo(file)
                 if file_id:
-                    product.image_file = file_id  
-
+                    product.image_file = file_id
+                else:
+                    flash('Error uploading image to Cloudinary.', 'error')
+                    return render_template('product_form.html', form=form, product=product)
+            else:
+                flash('Invalid file type. Allowed types are: png, jpg, jpeg, gif', 'error')
+                return render_template('product_form.html', form=form, product=product)
 
         product.name = form.name.data
         product.price = form.price.data
         db.session.commit()
-        
+
         flash('Product updated successfully!', 'success')
         return redirect(url_for('home'))
 
@@ -208,20 +187,21 @@ def update_product(product_id):
     form.price.data = product.price
     return render_template('product_form.html', form=form, product=product)
 
+# Delete product route
 @app.route('/delete_product/<int:product_id>', methods=['POST'])
 @login_required
 def delete_product(product_id):
     product = Product.query.get_or_404(product_id)
-    
 
     if product.image_file:
-        delete_google_drive_file(product.image_file)
+        delete_photo(product.image_file)
 
     db.session.delete(product)
     db.session.commit()
     flash('Product deleted successfully!', 'success')
     return redirect(url_for('home'))
 
+# Toggle like route
 @app.route('/toggle_like/<int:product_id>', methods=['POST'])
 @login_required
 def toggle_like(product_id):
@@ -235,7 +215,6 @@ def toggle_like(product_id):
         flash('You liked this product!', 'success')
     db.session.commit()
     return redirect(url_for('home'))
-
 
 if __name__ == '__main__':
     app.run()
