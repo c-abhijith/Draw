@@ -5,6 +5,7 @@ from flask_wtf.csrf import CSRFProtect
 from flask_migrate import Migrate
 import cloudinary
 import cloudinary.uploader
+import cloudinary.api
 from config import Config
 from forms import SignupForm, LoginForm, PictureForm, ToggleLikeForm
 from models import db, User, Product
@@ -22,26 +23,70 @@ db.init_app(app)
 csrf = CSRFProtect(app)
 migrate = Migrate(app, db)
 
-# Configure Cloudinary
+# Define the verification function first
+def verify_cloudinary_config():
+    try:
+        # Test Cloudinary configuration
+        cloudinary.api.ping()
+        print("Cloudinary configuration verified successfully")
+    except Exception as e:
+        print(f"Cloudinary configuration error: {str(e)}")
+
+# Initialize Cloudinary and verify config
 cloudinary.config(
     cloud_name=app.config['CLOUDINARY_CLOUD_NAME'],
     api_key=app.config['CLOUDINARY_API_KEY'],
     api_secret=app.config['CLOUDINARY_API_SECRET']
 )
 
+# Verify Cloudinary config during app initialization
+with app.app_context():
+    verify_cloudinary_config()
+
 # Function to upload image to Cloudinary
 def upload_photo(file):
-    try:
-        # Upload directly to cloudinary from the file stream
-        result = cloudinary.uploader.upload(
-            file,
-            folder="product_images",  # Optional: organize images in a folder
-            resource_type="auto"      # Automatically detect resource type
-        )
-        return result['public_id']    # Return Cloudinary public ID
-    except Exception as e:
-        print(f"An error occurred during upload: {e}")
+    if not file:
+        print("No file provided")
         return None
+        
+    try:
+        # Print Cloudinary config for debugging
+        print(f"Cloudinary Config - Cloud Name: {app.config['CLOUDINARY_CLOUD_NAME']}")
+        print(f"Cloudinary Config - API Key: {app.config['CLOUDINARY_API_KEY']}")
+        print(f"API Secret exists: {bool(app.config['CLOUDINARY_API_SECRET'])}")
+        
+        # Read file data
+        file_data = file.read()
+        if not file_data:
+            print("Empty file data")
+            return None
+            
+        # Upload to cloudinary
+        upload_result = cloudinary.uploader.upload(
+            file_data,
+            folder="product_images",
+            resource_type="auto",
+            api_key=app.config['CLOUDINARY_API_KEY'],
+            api_secret=app.config['CLOUDINARY_API_SECRET'],
+            cloud_name=app.config['CLOUDINARY_CLOUD_NAME']
+        )
+        
+        print(f"Upload result: {upload_result}")  # Debug print
+        
+        if 'public_id' in upload_result:
+            return upload_result['public_id']
+        else:
+            print(f"Upload failed: {upload_result}")
+            return None
+            
+    except Exception as e:
+        print(f"Detailed Cloudinary upload error: {str(e)}")
+        import traceback
+        traceback.print_exc()  # Print full stack trace
+        return None
+    finally:
+        # Reset file pointer
+        file.seek(0)
 
 # Function to delete image from Cloudinary
 def delete_photo(public_id):
@@ -136,25 +181,51 @@ def logout():
 def add_product():
     form = PictureForm()
     if form.validate_on_submit():
+        if 'image' not in request.files:
+            flash('No file part', 'error')
+            return render_template('product_form.html', form=form)
+            
         file = request.files['image']
-        if file and allowed_file(file.filename):
-            # Upload directly to Cloudinary without saving locally
-            file_id = upload_photo(file)
-            if file_id:
-                new_product = Product(
-                    name=form.name.data,
-                    price=form.price.data,
-                    user_id=session['user_id'],
-                    image_file=file_id  # Store Cloudinary public ID
-                )
-                db.session.add(new_product)
-                db.session.commit()
-                flash('Product added successfully!', 'success')
-                return redirect(url_for('home'))
-            else:
-                flash('Error uploading image to Cloudinary.', 'error')
-        else:
+        if file.filename == '':
+            flash('No selected file', 'error')
+            return render_template('product_form.html', form=form)
+            
+        if not allowed_file(file.filename):
             flash('Invalid file type. Allowed types are: png, jpg, jpeg, gif', 'error')
+            return render_template('product_form.html', form=form)
+
+        try:
+            print(f"Processing file: {file.filename}")
+            print(f"File content type: {file.content_type}")
+            print(f"File size: {file.content_length if hasattr(file, 'content_length') else 'unknown'}")
+            
+            file_id = upload_photo(file)
+            
+            if not file_id:
+                flash('Error uploading image to Cloudinary. Please try again.', 'error')
+                return render_template('product_form.html', form=form)
+
+            print(f"Successfully uploaded with ID: {file_id}")
+            
+            new_product = Product(
+                name=form.name.data,
+                price=form.price.data,
+                user_id=session['user_id'],
+                image_file=file_id
+            )
+            
+            db.session.add(new_product)
+            db.session.commit()
+            flash('Product added successfully!', 'success')
+            return redirect(url_for('home'))
+            
+        except Exception as e:
+            print(f"Error in add_product: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            flash('An error occurred while processing your request.', 'error')
+            return render_template('product_form.html', form=form)
+
     return render_template('product_form.html', form=form)
 
 # Add this helper function at the top of your file with other utility functions
