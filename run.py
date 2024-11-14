@@ -9,8 +9,11 @@ from config import Config
 from forms import SignupForm, LoginForm, PictureForm, ToggleLikeForm
 from models import db, User, Product
 from utils import login_required, logout_required
+import os
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config.from_object(Config)
 db.init_app(app)
 csrf = CSRFProtect(app)
@@ -44,8 +47,13 @@ def delete_photo(public_id):
     except Exception as e:
         print(f"An error occurred while deleting the file: {e}")
 
-with app.app_context():
-    db.create_all()
+# Update database initialization
+if os.getenv('VERCEL_ENV') == 'production':
+    with app.app_context():
+        try:
+            db.create_all()
+        except Exception as e:
+            print(f"Database initialization error: {e}")
 
 # Signup route
 @app.route('/signup', methods=['GET', 'POST'])
@@ -217,4 +225,7 @@ def toggle_like(product_id):
     return redirect(url_for('home'))
 
 if __name__ == '__main__':
-    app.run()
+    if os.getenv('VERCEL_ENV') == 'production':
+        app.run()
+    else:
+        app.run(debug=True)
