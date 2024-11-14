@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import CSRFProtect
@@ -12,7 +12,7 @@ from utils import login_required, logout_required
 import os
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='/static')
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config.from_object(Config)
 db.init_app(app)
@@ -223,6 +223,11 @@ def toggle_like(product_id):
         flash('You liked this product!', 'success')
     db.session.commit()
     return redirect(url_for('home'))
+
+# Add this route for serving static files
+@app.route('/static/<path:path>')
+def serve_static(path):
+    return send_from_directory('static', path)
 
 if __name__ == '__main__':
     if os.getenv('VERCEL_ENV') == 'production':
